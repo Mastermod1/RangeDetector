@@ -16,5 +16,5 @@ CompileFlags:
       -free,
       -fipa-pta,
     ]
-  Diagnostics:
-  	Suppress: "pp_including_mainfile_in_preamble"
+  # Diagnostics:
+  # 	Suppress: "pp_including_mainfile_in_preamble"
