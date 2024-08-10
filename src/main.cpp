@@ -3,13 +3,11 @@
 #include <WebServer.h>
 #include <WiFi.h>
 
+#include "HardwareSerial.h"
 #include "SPIFFS.h"
 #include "esp32-hal-gpio.h"
 
 const int G_EPROM_SIZE = 1;
-
-const char* G_NETWORK_SSID = "your_ssid";
-const char* G_NETWORK_PASSWORD = "your_password";
 
 const char* G_AP_SSID = "ESP32-AP";
 const char* G_AP_PASSWORD = "123456789";
@@ -60,16 +58,28 @@ void handleSetup()
             G_SERVER.send(200, "application/json", R"({"status": "not_correct"})");
             return;
         }
-        if (doc.containsKey("ssid") and doc.containsKey("password"))
+        if (doc.containsKey("ssid") and doc.containsKey("passwd"))
         {
             const char* ssid = doc["ssid"];
             Serial.println("Received message: " + String(ssid));
+            const char* passwd = doc["passwd"];
+            Serial.println("Received message: " + String(passwd));
+            EEPROM.write(0, 69);
+            EEPROM.commit();
+            File file = SPIFFS.open("/wifi.txt", FILE_WRITE);
+            file.println(ssid);
+            file.println(passwd);
+            file.close();
+
+            G_SERVER.send(200, "application/json", R"({"status": "correct"})");
+            delay(200);
+            WiFi.softAPdisconnect(true);
         }
-        EEPROM.write(0, 69);
-        EEPROM.commit();
-        G_SERVER.send(200, "application/json", R"({"status": "correct"})");
-        delay(200);
-        WiFi.softAPdisconnect(true);
+        else
+        {
+            G_SERVER.send(200, "application/json", R"({"status": "not_correct"})");
+            Serial.println("Failure setting up");
+        }
     }
 }
 
@@ -77,20 +87,20 @@ bool isWiFiSsidAndPasswordSet() { return EEPROM.read(0) == 69; }
 
 void initMainWebPage()
 {
-    File file2 = SPIFFS.open("/main.html");
-    if (!file2)
+    File file = SPIFFS.open("/main.html");
+    if (!file)
     {
         Serial.println("Failed to open file for reading");
         return;
     }
 
     Serial.println("Saving main.html to cache");
-    while (file2.available())
+    while (file.available())
     {
-        G_MAIN_PAGE += static_cast<char>(file2.read());
+        G_MAIN_PAGE += static_cast<char>(file.read());
     }
 
-    file2.close();
+    file.close();
 }
 
 void mountSpiffs()
@@ -105,14 +115,42 @@ void mountSpiffs()
     }
 }
 
-void connectToWiFi()
+enum class Status
 {
-    WiFi.begin(G_NETWORK_SSID, G_NETWORK_PASSWORD);
+    Success,
+    Failure
+};
+
+Status connectToWiFi()
+{
+
+    File file = SPIFFS.open("/wifi.txt");
+    if (!file)
+    {
+        Serial.println("Failed to open wifi.txt file for reading");
+        return Status::Failure; 
+    }
+
+    String ssid = file.readStringUntil('\n');
+    String passwd = file.readStringUntil('\n');
+    ssid.trim();
+    passwd.trim();
+    file.close();
+
+    WiFi.begin(ssid, passwd);
     Serial.print("Connecting To WiFi");
+    int timeCounter = 0;
     while (WiFi.status() != WL_CONNECTED)
     {
-        delay(500);
+        if (timeCounter > 15)
+        {
+            Serial.println("Couldn't connect to WiFi with saved credentials.");
+            WiFi.disconnect();
+            return Status::Failure;
+        }
+        delay(1000);
         Serial.print(".");
+        timeCounter++;
     }
     Serial.println("");
     Serial.println("WiFi Connected!");
@@ -122,10 +160,21 @@ void connectToWiFi()
 
     G_SERVER.on("/data", HTTP_GET, handleData);
     G_SERVER.begin();
+
+    return Status::Success;
 }
+
+// void handleJsRequest()
+// {
+//     File file = SPIFFS.open("/jquery-3.7.1.min.js");
+//     char buff[file.size()];
+//     file.readBytes(buff, file.size());
+//     G_SERVER.send(200, "text/javascript", buff);
+// }
 
 void startSetupAp()
 {
+    Serial.println("Start Access Point");
     WiFi.softAP(G_AP_SSID, G_AP_PASSWORD);
 
     delay(100);
@@ -133,8 +182,10 @@ void startSetupAp()
     IPAddress NMask(255, 255, 255, 0);
     WiFi.softAPConfig(Ip, Ip, NMask);
 
+    G_SERVER.enableCORS();
     G_SERVER.on("/", HTTP_GET, handleWiFiSetupPage);
     G_SERVER.on("/setup", HTTP_POST, handleSetup);
+    // G_SERVER.on("/jquery-3.7.1.min.js", HTTP_GET, handleJsRequest);
     G_SERVER.begin();
 }
 
@@ -146,13 +197,14 @@ void setup()
 
     pinMode(G_BUTTON_PIN, INPUT);
 
+    auto wifi_connection = Status::Failure;
     if (isWiFiSsidAndPasswordSet())
     {
-        connectToWiFi();
+        wifi_connection = connectToWiFi();
     }
-    else
+  
+    if (wifi_connection == Status::Failure)
     {
-        Serial.println("Startin Access Point with Config Page");
         startSetupAp();
     }
 }

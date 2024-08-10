@@ -6,27 +6,81 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Setup page</title>
     <!-- <link href="css/style.css" rel="stylesheet"> -->
+    <!-- <script src="jquery-3.7.1.min.js"></script> -->
 </head>
 
 <body>
-    <h1>Hello from ESP</h1>
-    <label>Ssid:</label>
-    <input type="text"></input>
-    <label>Password:</label>
-    <input type="text"></input>
-    <input type="submit" onclick='postData()'>
+    <div class="container-lg">
+        <div class="row">
+            <h1>Hello from ESP</h1>
+        </div>
+        <div class="row">
+            <ul class="nav justify-content-end">
+                <li class="nav-item">
+                    <a class="nav-link active" aria-current="page" href="#">WiFi Setup</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#">Link</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#">Link</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link disabled">Disabled</a>
+                </li>
+            </ul>
+        </div>
+        <div class="row">
+            <div id="liveAlertPlaceholder"></div>
+            <div class="mb-3">
+                <label for="wifi-ssid" class="form-label">Ssid</label>
+                <input type="text" class="form-control" id="wifi-ssid" aria-describedby="emailHelp">
+            </div>
+            <div class="mb-3">
+                <label for="wifi-password" class="form-label">Password</label>
+                <input type="password" class="form-control" id="wifi-password">
+            </div>
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="exampleCheck1">
+                <label class="form-check-label" for="exampleCheck1">Check me out</label>
+            </div>
+            <button type="submit" class="btn btn-primary" onclick="postData()">Submit</button>
+        </div>
+    </div>
     <script>
+        const alertPlaceholder = document.getElementById('liveAlertPlaceholder')
+
+        const alert = (message, type) => {
+            const wrapper = document.createElement('div')
+            wrapper.innerHTML = [
+                `<div class="alert alert-${type} alert-dismissible" role="alert">`,
+                `   <div>${message}</div>`,
+                '   <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>',
+                '</div>'
+            ].join('')
+
+            alertPlaceholder.append(wrapper)
+        }
+
         function postData() {
-            const data = {ssid: 'lol'};
+            let ssid = document.getElementById("wifi-ssid").value;
+            let passwd = document.getElementById("wifi-password").value;
             fetch('/setup', {
                 method: 'POST',
-                body: JSON.stringify(data),
+                body: JSON.stringify({ssid: ssid, passwd: passwd}),
                 headers: {
                     'Content-Type': 'application/json'
                 }
             })
                 .then(response => response.json())
-                .then(data => console.log(data));
+                .then(data => {
+                    if (data.status == "correct") {
+                        alert('Nice, you triggered this alert message!', 'success')
+                    }
+                    else {
+                        alert('Failure', 'success')
+                    }
+                });
         }
     </script>
 </body>
