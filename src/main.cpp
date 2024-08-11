@@ -167,13 +167,36 @@ Status connectToWiFi()
     return Status::Success;
 }
 
-// void handleJsRequest()
-// {
-//     File file = SPIFFS.open("/jquery-3.7.1.min.js");
-//     char buff[file.size()];
-//     file.readBytes(buff, file.size());
-//     G_SERVER.send(200, "text/javascript", buff);
-// }
+void sendBigFile(const String& fileName, const String& type = "text/plain")
+{
+    File file = SPIFFS.open(fileName, FILE_READ);
+    if (!file)
+    {
+        G_SERVER.send(404, "text/plain", "File not found");
+        return;
+    }
+
+    G_SERVER.setContentLength(file.size());
+    G_SERVER.send(200, type, "");
+
+    const size_t chunkSize = 1024;
+    std::uint8_t buffer[chunkSize];
+    size_t bytesRead = 0;
+    while ((bytesRead = file.read(buffer, chunkSize)) > 0){
+        G_SERVER.client().write(buffer, bytesRead);
+    }
+    file.close();
+}
+
+void handleJsRequest()
+{
+    sendBigFile("/jquery-3.7.1.min.js", "text/javascript");
+}
+
+void handleCssRequest()
+{
+    sendBigFile("/output.css", "text/css");
+}
 
 void startSetupAp()
 {
@@ -188,7 +211,8 @@ void startSetupAp()
     G_SERVER.enableCORS();
     G_SERVER.on("/", HTTP_GET, handleWiFiSetupPage);
     G_SERVER.on("/setup", HTTP_POST, handleSetup);
-    // G_SERVER.on("/jquery-3.7.1.min.js", HTTP_GET, handleJsRequest);
+    G_SERVER.on("/jquery-3.7.1.min.js", HTTP_GET, handleJsRequest);
+    G_SERVER.on("/output.css", HTTP_GET, handleCssRequest);
     G_SERVER.begin();
 }
 
