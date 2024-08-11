@@ -3,6 +3,8 @@
 #include <WebServer.h>
 #include <WiFi.h>
 
+#include <functional>
+
 #include "HardwareSerial.h"
 #include "SPIFFS.h"
 #include "esp32-hal-gpio.h"
@@ -22,6 +24,8 @@ int G_STOP_PRESS = 0;
 
 String G_MAIN_PAGE = "";
 WebServer G_SERVER;
+
+constexpr std::uint8_t WIFI_CONFIGURED_FLAG = 69;
 
 enum class ButtonState
 {
@@ -83,7 +87,7 @@ void handleSetup()
     }
 }
 
-bool isWiFiSsidAndPasswordSet() { return EEPROM.read(0) == 69; }
+bool isWiFiSsidAndPasswordSet() { return EEPROM.read(0) == WIFI_CONFIGURED_FLAG; }
 
 void initMainWebPage()
 {
@@ -123,12 +127,11 @@ enum class Status
 
 Status connectToWiFi()
 {
-
     File file = SPIFFS.open("/wifi.txt");
     if (!file)
     {
         Serial.println("Failed to open wifi.txt file for reading");
-        return Status::Failure; 
+        return Status::Failure;
     }
 
     String ssid = file.readStringUntil('\n');
@@ -189,6 +192,20 @@ void startSetupAp()
     G_SERVER.begin();
 }
 
+void initialzieInternetConnection()
+{
+    auto wifi_connection = Status::Failure;
+    if (isWiFiSsidAndPasswordSet())
+    {
+        wifi_connection = connectToWiFi();
+    }
+
+    if (wifi_connection == Status::Failure)
+    {
+        startSetupAp();
+    }
+}
+
 void setup()
 {
     Serial.begin(9600);
@@ -197,19 +214,10 @@ void setup()
 
     pinMode(G_BUTTON_PIN, INPUT);
 
-    auto wifi_connection = Status::Failure;
-    if (isWiFiSsidAndPasswordSet())
-    {
-        wifi_connection = connectToWiFi();
-    }
-  
-    if (wifi_connection == Status::Failure)
-    {
-        startSetupAp();
-    }
+    initialzieInternetConnection();
 }
 
-ButtonState check()
+ButtonState getButtonState()
 {
     if (G_BUTTON_CURRENT_STATE == HIGH)
     {
@@ -233,25 +241,45 @@ ButtonState check()
     return ButtonState::NotPressed;
 }
 
-void enterSetupStateOnButtonClick()
+void commitEEPROMFlag(int addr, int val)
+{
+    EEPROM.write(addr, val);
+    EEPROM.commit();
+}
+
+void handleButtonRelease(const ButtonState buttonState)
+{
+    switch (buttonState)
+    {
+        case ButtonState::ShortPress:
+            Serial.println("To do");
+            break;
+        case ButtonState::LongPress:
+            commitEEPROMFlag(0, WIFI_CONFIGURED_FLAG);
+            startSetupAp();
+            break;
+        default:
+            Serial.print("Not handled state: ");
+            Serial.println(static_cast<int>(buttonState));
+            break;
+    }
+}
+
+void handleButtonPress(const std::function<void(const ButtonState)>& onPress,
+                       const std::function<void(const ButtonState)>& onRelease)
 {
     G_BUTTON_CURRENT_STATE = digitalRead(G_BUTTON_PIN);
 
     if (G_BUTTON_CURRENT_STATE != G_BUTTON_LAST_STATE)
     {
-        const auto buttonState = check();
+        const auto buttonState = getButtonState();
         if (G_BUTTON_CURRENT_STATE == LOW)  // on release
         {
-            if (buttonState == ButtonState::ShortPress)
-            {
-                Serial.println("To do");
-            }
-            else if (buttonState == ButtonState::LongPress)
-            {
-                EEPROM.write(0, 69);
-                EEPROM.commit();
-                startSetupAp();
-            }
+            onRelease(buttonState);
+        }
+        else
+        {
+            onPress(buttonState);
         }
     }
 
@@ -261,5 +289,5 @@ void enterSetupStateOnButtonClick()
 void loop()
 {
     G_SERVER.handleClient();
-    enterSetupStateOnButtonClick();
+    handleButtonPress([](const ButtonState) {}, handleButtonRelease);
 }
